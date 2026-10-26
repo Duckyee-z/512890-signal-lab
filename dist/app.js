@@ -3,15 +3,17 @@ const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 const fmt=(n,d=3)=>n==null?'—':Number(n).toFixed(d),pct=(n,d=2)=>n==null?'—':`${n>=0?'+':''}${(n*100).toFixed(d)}%`;
 const cls=n=>n==null?'':n>=0?'positive':'negative';
 let data,analysis,rows,signals,shown=[],selected=-1,locked=false,filter='all',page=0,range={start:'',end:''},simulation;
-const pageSize=8;let currentView='overview';
+const pageSize=8;let currentView='overview';let calendar={holidays:[],supportedYears:[]};let refreshing=false;
 function notify(message){$('#toast').textContent=message;$('#toast').hidden=false;setTimeout(()=>$('#toast').hidden=true,2600);}
 async function init(){
  try{
-  const response=await fetch('./data.json');if(!response.ok)throw new Error('数据快照载入失败');data=await response.json();analysis=analyze(data.rows);({rows,signals}=analysis);
+  const responses=await Promise.all([fetch('./data.json?v='+Date.now(),{cache:'no-store'}),fetch('./calendar.json')]);
+  if(responses.some(r=>!r.ok))throw new Error('行情数据载入失败');[data,calendar]=await Promise.all(responses.map(r=>r.json()));analysis=analyze(data.rows);({rows,signals}=analysis);
   $('#latest-date').textContent=data.meta.latestUsableDate;
-  $('#notice').innerHTML=`数据提示：收到的 ${data.meta.latestReceivedDate} K 线精度异常，已隔离；可用行情截至 ${data.meta.latestUsableDate}。<a href="#data">查看原因</a> · 固定快照，不是实时行情。`;
+  renderNotice();
   for(const el of [$('#start'),$('#end')]){el.min=rows[20].date;el.max=rows.at(-1).date;}
   renderAudit();bind();setPreset('3');changeView();
+  setInterval(()=>{if(!document.hidden)refreshData(false);},300000);
  }catch(e){$('#notice').textContent='无法可靠判定：'+e.message+'。本页不会展示模拟行情。';$('#notice').style.color='#b45d45';$$('button,input,select').forEach(e=>e.disabled=true);}
 }
 function bind(){
@@ -22,6 +24,7 @@ function bind(){
  [$('#show-ma'),$('#show-a'),$('#show-b')].forEach(e=>e.addEventListener('change',drawPrice));
  $$('#signal-filter button').forEach(b=>b.addEventListener('click',()=>{filter=b.dataset.strategy;page=0;$$('#signal-filter button').forEach(x=>x.classList.toggle('selected',x===b));renderSignals();}));
  $('#prev-page').addEventListener('click',()=>{page--;renderSignals();});$('#next-page').addEventListener('click',()=>{page++;renderSignals();});
+ $('#refresh-data').addEventListener('click',()=>refreshData(true));
  $('#export').addEventListener('click',exportCSV);$('#run-sim').addEventListener('click',runSimulation);
  $('#reset-chart').addEventListener('click',()=>{selected=-1;locked=false;$('#chart-tooltip').hidden=true;$('#chart-day').textContent='使用鼠标或左右方向键查看单日行情';drawPrice();});
  const canvas=$('#price-chart');
@@ -131,9 +134,45 @@ function drawEquity(){
  for(const [values,color] of [[benchmark,'#b4bfc2'],[nav,'#cb895e']]){ctx.beginPath();values.forEach((v,i)=>{i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v));});ctx.strokeStyle=color;ctx.lineWidth=1.7;ctx.stroke();}
  ctx.textAlign='center';ctx.font='9px ui-monospace,monospace';for(let i=0;i<=3;i++){const k=Math.round((curve.length-1)*i/3);ctx.fillText(curve[k].date.slice(2),x(k),h-13);}
 }
+function escapeHTML(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function latestExpected(){
+ const local=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
+ const date=local.slice(0,10),clock=local.slice(11,16);const day=new Date(date+'T12:00:00Z');if(clock<'15:15')day.setUTCDate(day.getUTCDate()-1);
+ while([0,6].includes(day.getUTCDay())||calendar.holidays.includes(day.toISOString().slice(0,10)))day.setUTCDate(day.getUTCDate()-1);
+ return day.toISOString().slice(0,10);
+}
+function renderNotice(){
+ const m=data.meta,last=m.lastSuccessfulFetchAt?.replace('T',' ').replace('+08:00','')||'等待首次在线抓取';
+ let message=`自动更新：工作日 16:37 / 18:37 / 21:37（北京时间） · 上次成功抓取 ${last}。`;
+ if(m.updateStatus==='failed')message=`最近抓取失败，保留截至 ${m.latestUsableDate} 的有效行情。`+message;
+ const expected=latestExpected();if(m.latestUsableDate<expected)message+=` 当前最新应收盘日期 ${expected}，来源尚未更新。`;
+ const recent=(m.precisionNotes||[]).filter(n=>n.date===m.latestUsableDate);if(recent.length)message+=` ${m.latestUsableDate} 来源小数位较少，已按原值纳入计算。`;
+ $('#notice').textContent=message;$('#latest-date').textContent=m.latestUsableDate;$('.source-label').textContent=m.provider+' · 日线';
+}
+async function refreshData(manual){
+ if(refreshing)return;refreshing=true;const button=$('#refresh-data');button.disabled=true;
+ try{
+  const response=await fetch('./data.json?v='+Date.now(),{cache:'no-store'});if(!response.ok)throw new Error('读取行情失败');
+  const next=await response.json();const nextAnalysis=analyze(next.rows),wasLatest=rows.at(-1).date;
+  const preset=$$('#ranges button').find(b=>b.classList.contains('selected'))?.dataset.months;
+  const oldStart=range.start,oldEnd=range.end,changed=JSON.stringify(next.meta)!==JSON.stringify(data.meta);
+  data=next;analysis=nextAnalysis;({rows,signals}=analysis);renderNotice();renderAudit();
+  for(const el of [$('#start'),$('#end')]){el.min=rows[20].date;el.max=rows.at(-1).date;}
+  if(changed){
+   if(preset)setPreset(preset);else{$('#start').value=oldStart<rows[20].date?rows[20].date:oldStart;$('#end').value=oldEnd===wasLatest?rows.at(-1).date:(oldEnd>rows.at(-1).date?rows.at(-1).date:oldEnd);applyRange();}
+  }
+  if(manual)notify(changed?'已载入最新发布行情':'已是最新发布行情 · '+data.meta.latestUsableDate);
+ }catch(error){if(manual)notify('同步失败，保留当前已载入行情');$('#notice').textContent='页面同步失败，保留截至 '+data.meta.latestUsableDate+' 的已载入行情。';}
+ finally{refreshing=false;button.disabled=false;}
+}
 function renderAudit(){
- const m=data.meta;$('#data-summary').innerHTML=`<h2>数据快照 <span class="pill">2026.10.26</span></h2><dl class="data-list"><dt>标的</dt><dd>${m.name}（${m.symbol} / 上海）</dd><dt>数据提供方</dt><dd>${m.provider} · 公开日 K 线接口</dd><dt>复权口径</dt><dd>${m.adjustment}</dd><dt>最新收到 K 线</dt><dd>${m.latestReceivedDate}（已隔离，不参与计算）</dd><dt>最新可用 K 线</dt><dd>${m.latestUsableDate}</dd><dt>有效数据区间</dt><dd>${m.firstDate} — ${m.latestUsableDate} · ${m.rowCount} 根真实交易日日线</dd><dt>可判定信号起点</dt><dd>${rows[20].date}（前 20 根用于均线预热）</dd><dt>交易日连续性</dt><dd>通过 · 无重复、无缺失，按上交所休市安排核验</dd><dt>当次请求链接</dt><dd><a href="${m.source}" target="_blank" rel="noopener">${m.source}</a></dd><dt>原始响应 SHA256</dt><dd class="code">${m.rawSha256}</dd></dl>`;
- $('#quarantine').innerHTML=m.quarantined.map(q=>`<p><b>${q.date}</b> · ${q.reason}。</p><div class="table-scroll"><table class="quarantine-table"><thead><tr><th>同一响应内的数据</th><th>开盘</th><th>收盘</th><th>最高</th><th>最低</th></tr></thead><tbody><tr><td>qfqday 日 K</td><td>${q.qfqOHLC.open}</td><td>${q.qfqOHLC.close}</td><td>${q.qfqOHLC.high}</td><td>${q.qfqOHLC.low}</td></tr><tr><td>qt 报价（仅核验）</td><td>${q.quoteOHLC.open}</td><td>${q.quoteOHLC.close}</td><td>${q.quoteOHLC.high}</td><td>${q.quoteOHLC.low}</td></tr></tbody></table></div><p>不使用 qt 报价或英为财情行情修补前复权序列。这一日没有进入 MA20、有效期、信号或回测。无法可靠判断 ${q.date} 的新买点。</p>`).join('');
- $('#calendar-links').innerHTML=m.calendarSources.map(s=>`<a href="${s.url}" target="_blank" rel="noopener">${s.label} ↗</a>`).join('　');
+ const m=data.meta;
+ const calendarStatus=m.calendarVerified?'通过 · 已覆盖年份内无重复、无缺失':'已核验年份 '+m.calendarYears.join('、')+'；其余年份尚无独立日历核验';
+ const status={success:'抓取成功',failed:'最近抓取失败，保留上次数据',cached:'已按来源原值重算缓存'}[m.updateStatus]||'—';
+ $('#data-summary').innerHTML=`<h2>行情与更新 <span class="pill">${escapeHTML(m.snapshotDate)}</span></h2><dl class="data-list"><dt>标的</dt><dd>${escapeHTML(m.name)}（${m.symbol} / 上海）</dd><dt>数据提供方</dt><dd>${escapeHTML(m.provider)} · 公开日 K 线接口</dd><dt>复权口径</dt><dd>${escapeHTML(m.adjustment)}</dd><dt>最新收到 K 线</dt><dd>${escapeHTML(m.latestReceivedDate)}</dd><dt>最新可用 K 线</dt><dd>${m.latestUsableDate}（仅收盘日线）</dd><dt>有效数据区间</dt><dd>${m.firstDate} — ${m.latestUsableDate} · ${m.rowCount} 根日线</dd><dt>可判定信号起点</dt><dd>${rows[20].date}（前 20 根用于均线预热）</dd><dt>交易日连续性</dt><dd>${calendarStatus}</dd><dt>自动检查时间</dt><dd>${escapeHTML(m.autoUpdateSchedule||'—')}</dd><dt>最近抓取尝试</dt><dd>${escapeHTML(m.lastAttemptAt||'—')}</dd><dt>最近成功抓取</dt><dd>${escapeHTML(m.lastSuccessfulFetchAt||'—')}</dd><dt>更新状态</dt><dd>${status}${m.lastUpdateError?'<br>'+escapeHTML(m.lastUpdateError):''}</dd><dt>当次请求链接</dt><dd><a href="${escapeHTML(m.source)}" target="_blank" rel="noopener">${escapeHTML(m.source)}</a></dd><dt>原始响应 SHA256</dt><dd class="code">${m.rawSha256}</dd></dl>`;
+ $('#raw-response').href='./'+(m.rawFile||'source-tencent.json');
+ const notes=(m.precisionNotes||[]).slice(-12).reverse();
+ $('#quarantine').innerHTML=`<p>小数位数不作为拒绝行情的条件。所有有效 K 线保留来源原始数值，统一参与 MA20、有效窗口、A/B 信号和资金回测；不会用另一种报价口径替换。</p>`+(notes.length?`<p>以下来源字段的小数位少于 3 位，仅作提示：</p><div class="table-scroll"><table><thead><tr><th>日期</th><th>来源字段原值</th><th>处理方式</th></tr></thead><tbody>${notes.map(n=>`<tr><td>${n.date}</td><td>${Object.entries(n.values).map(([k,v])=>k+' = '+escapeHTML(v)).join(' · ')}</td><td>正常纳入计算</td></tr>`).join('')}</tbody></table></div>`:'<p>当前来源没有小数位提示。</p>');
+ $('#calendar-links').innerHTML=(m.calendarSources||[]).map(s=>`<a href="${escapeHTML(s.url)}" target="_blank" rel="noopener">${escapeHTML(s.label)} ↗</a>`).join('　');
 }
 init();

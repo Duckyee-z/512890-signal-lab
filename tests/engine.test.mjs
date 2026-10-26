@@ -49,8 +49,8 @@ test('next-open execution, fee, two positions maximum, last-day signal not fille
  const s=simulate(a.rows,ss,{start:a.rows[0].date,end:a.rows[4].date,strategy:'AB',capital:100000,feeBps:0});assert.equal(s.trades.length,2);assert.equal(s.trades[0].entryDate,a.rows[1].date);assert.equal(s.trades[0].exitDate,a.rows[3].date);assert.equal(s.trades[0].exit,1.2);assert.equal(s.positions.length,0);assert.equal(s.pending,1);assert.ok(s.cash>100000);
  const f=simulate(a.rows,[ss[0]],{start:a.rows[0].date,end:a.rows[1].date,strategy:'A',capital:100000,feeBps:3});assert.ok(f.totalReturn<0);assert.ok(f.positions.length<=2);
 });
-test('actual data: 640 rows, independent forward return, warmup, full reconstruction invariant',()=>{
- const d=JSON.parse(fs.readFileSync(new URL('../dist/data.json',import.meta.url)));assert.equal(d.rows.length,640);assert.equal(d.meta.latestUsableDate,'2026-10-23');assert.equal(d.meta.quarantined[0].date,'2026-10-26');
+test('actual data: validated rows, independent forward return, warmup, full reconstruction invariant',()=>{
+ const d=JSON.parse(fs.readFileSync(new URL('../dist/data.json',import.meta.url)));assert.ok(d.rows.length>=45);assert.equal(d.meta.latestUsableDate,d.rows.at(-1).date);assert.equal(d.meta.rowCount,d.rows.length);assert.deepEqual(d.meta.quarantined,[]);
  const a=analyze(d.rows);assert.ok(a.signals.length>0);assert.ok(a.signals.every(s=>s.index>=21));
  const seen=new Set();for(const s of a.signals){const key=s.strategy+s.breakout;assert.ok(!seen.has(key));seen.add(key);assert.ok(s.age>=1&&s.age<=10);if(s.strategy==='B')assert.ok(s.peak<s.date&&s.peak>s.breakout);}
  const ret=forwardReturn(a.rows,a.rows.length-10,20);assert.equal(ret,null);assert.equal(forwardReturn(a.rows,30,20),a.rows[50].closeN/a.rows[31].openN-1);

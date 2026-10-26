@@ -20,9 +20,9 @@
  <div class="sidebar-bottom"><span class="lock-icon">▣</span><div>静态研究站<small>访问范围由托管设置控制</small></div><span class="avatar">Z</span></div>
 </aside>
 <main>
- <header class="topbar"><div class="breadcrumb">研究空间 <span>/</span> <b id="page-label">信号工作台</b></div><div class="top-tags"><span class="live-dot"></span>历史快照 <span class="separator">|</span><span>SH · 512890</span></div></header>
+ <header class="topbar"><div class="breadcrumb">研究空间 <span>/</span> <b id="page-label">信号工作台</b></div><div class="top-tags"><span class="live-dot"></span>收盘后自动更新 <span class="separator">|</span><span>SH · 512890</span></div></header>
  <div class="content">
-  <div class="heading"><div><div class="eyebrow">HUATAI-PINEBRIDGE · DIVIDEND LOW VOLATILITY</div><h1>512890 <span>买点回测</span><sup>MVP</sup></h1><p>从突破到回踩，复盘每一次 A / B 信号。</p></div><button id="export" class="button outline"><span>↓</span> 导出信号 CSV</button></div>
+  <div class="heading"><div><div class="eyebrow">HUATAI-PINEBRIDGE · DIVIDEND LOW VOLATILITY</div><h1>512890 <span>买点回测</span><sup>MVP</sup></h1><p>从突破到回踩，复盘每一次 A / B 信号。</p></div><div class="heading-actions"><button id="refresh-data" class="button outline" title="读取最新已发布的行情数据">↻ 刷新数据</button><button id="export" class="button outline"><span>↓</span> 导出信号 CSV</button></div></div>
   <div class="snapshot-bar"><div><span class="dot green"></span>最新可用 K 线 <b id="latest-date">加载中</b><span class="pill">前复权</span><span class="source-label">腾讯证券 · 日线</span></div><a href="#data">查看数据审计 <span>↗</span></a></div>
   <div class="notice" id="notice" role="status"></div>
   <section class="filterbar" aria-label="时间范围">
@@ -60,14 +60,14 @@
    <section class="card prose"><h2>如何核对一个信号</h2><p>在「历史触发记录」点击日期，检查当天收盘价与 MA20 的距离；再查看突破日期、B 的冲高日期和剩余交易日。图表支持悬停、点击锁定、左右方向键查看前后日；「导出信号 CSV」导出当前区间和当前策略筛选的结果。</p><p>买点在收盘后确认，只能提示下一交易日开盘可考虑执行。后 20 日收益使用下一交易日开盘至第 20 个交易日收盘，不足 20 日标记「样本未完结」。</p></section>
   </section>
   <section class="view" id="data" hidden>
-   <div class="section-heading"><div><h2>数据有出处，计算有边界。</h2><p>固定快照 MVP。不会将旧 K 线伪装成当日行情，也不会用其他复权口径替代。</p></div><a class="button outline" href="./source-tencent.json" download>↓ 原始响应 JSON</a></div>
+   <div class="section-heading"><div><h2>数据有出处，计算有边界。</h2><p>收盘后定时更新，抓取失败时保留上次行情，并明确显示日期和状态。</p></div><a class="button outline" id="raw-response" href="./source-market.json" download>↓ 原始响应 JSON</a></div>
    <section class="card prose" id="data-summary"></section>
-   <section class="card prose"><h2>隔离记录</h2><div id="quarantine"></div></section>
-   <section class="card prose"><h2>验证与复现</h2><ul><li>响应 code = 0，明确使用 data.sh512890.qfqday；字段顺序为日期、开盘、收盘、最高、最低、成交量，已正确映射。</li><li>有效日线已核验日期唯一、升序、OHLC 完整且价格区间一致。与上交所 2024–2026 休市安排比对，640 根有效日线无缺失交易日。</li><li>最近 19 根有效 K 线（2026-09-21 至 2026-10-23）的 OHLC 与英为财情逐项一致。该页面未明确复权口径，仅用于交叉核验。</li><li>以原始数值计算，MA20 预热后重建全量突破事件。计算只读取当前及此前 K 线；未来收益仅用于事后观察。</li><li>前复权价格采用本次提供方快照，未来分红可能使历史序列修订；不是逐日归档的时点复权数据库。</li></ul><p id="calendar-links"></p><p><a href="https://cn.investing.com/etfs/huatai-pinebridge-csi-div-low-vol-historical-data" target="_blank" rel="noopener">交叉核验：英为财情历史行情 ↗</a></p><p class="muted">本版不自动刷新行情或发送通知。重新访问仍载入同一快照；后续更新需重新拉取、核验并部署。原有买点提醒任务独立运行。</p></section>
+   <section class="card prose"><h2>来源精度说明</h2><div id="quarantine"></div></section>
+   <section class="card prose"><h2>验证与复现</h2><ul><li>优先请求腾讯证券明确前复权的 qfqday；失败时尝试东方财富明确前复权的 fqt=1。每次整段历史采用单一来源及同一复权口径。</li><li>检查响应身份、日期排序与去重、至少45根日线、OHLC完整性及已知年份的交易日连续性；不纳入未收盘或未来日期日线。</li><li>小数位较少或与普通报价不同，仅作来源提示，按来源原值计算。少于3位小数不是排除K线的理由。</li><li>抓取或校验失败保留上次有效数据，页面显示失败状态和最近成功时间，不将旧行情标为新行情。</li><li>以全量历史重建 MA20 与 A/B 事件。前复权序列会随分红等事件修订，不混接不同复权基准的历史片段。</li></ul><p id="calendar-links"></p><p class="muted">服务端每个工作日北京时间 16:37、18:37、21:37 自动检查、重算并发布，GitHub Actions 可能延迟。页面打开时每5分钟检查一次已发布的数据，也可点击「刷新数据」。休市不推进窗口。此功能不发送买点通知。</p></section>
   </section>
   <footer><span>512890 · THE SIGNAL LAB</span><span>历史研究工具 · 收盘确认 · 次日执行假设</span><span>SIGNAL RESEARCH <span class="dot green"></span></span></footer>
  </div>
 </main>
 <div class="toast" id="toast" role="status" hidden></div>
-<script type="module" src="./app.js"></script>
+<script type="module" src="./app.js?v=2"></script>
 </body></html>
