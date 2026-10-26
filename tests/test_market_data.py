@@ -22,13 +22,17 @@ class MarketDataTest(unittest.TestCase):
         raw = self.raw if obj is None else json.dumps(obj).encode()
         return prepare(raw, TENCENT, kwargs.pop('now', self.now), self.calendar, **kwargs)
 
-    def test_two_decimals_and_quote_mismatch_are_included_unchanged(self):
+    def test_rounded_latest_candle_uses_verified_complete_precision(self):
         data = self.build()
         self.assertEqual(len(data['rows']), 641)
         self.assertEqual(data['rows'][-1]['date'], '2026-10-26')
-        self.assertEqual(data['rows'][-1]['close'], '1.21')
+        self.assertEqual(data['rows'][-1]['close'], '1.213')
+        self.assertEqual(data['rows'][-1]['open'], '1.195')
+        self.assertEqual(data['rows'][-1]['high'], '1.215')
+        self.assertEqual(data['rows'][-1]['low'], '1.192')
         self.assertEqual(data['meta']['quarantined'], [])
-        self.assertEqual(data['meta']['precisionNotes'][-1]['date'], '2026-10-26')
+        self.assertEqual(data['meta']['latestCandleCorrection']['originalOHLC']['close'], '1.21')
+        self.assertFalse(any(n['date']=='2026-10-26' for n in data['meta']['precisionNotes']))
         self.assertEqual(data['meta']['quoteComparison']['quoteOHLC']['close'], '1.213')
 
     def test_unclosed_and_future_candles_are_excluded(self):
@@ -88,12 +92,67 @@ class MarketDataTest(unittest.TestCase):
             self.build(obj, previous=old)
 
     def test_eastmoney_fallback_uses_whole_explicit_qfq_series(self):
-        values = self.obj['data']['sh512890']['qfqday']
+        values = copy.deepcopy(self.obj['data']['sh512890']['qfqday'])
+        values[-1][1:5] = ['1.195', '1.213', '1.215', '1.192']
         obj = {'rc': 0, 'data': {'code': '512890', 'klines': [','.join(r[:6]) for r in values]}}
         data = prepare(json.dumps(obj).encode(), EASTMONEY, self.now, self.calendar)
         self.assertEqual(data['meta']['provider'], '东方财富')
         self.assertIn('fqt=1', data['meta']['adjustment'])
+        self.assertEqual(data['rows'][-1]['close'], '1.213')
+
+
+    def test_reference_close_must_match_adjustment_basis(self):
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][4] = '1.200'
+        with self.assertRaisesRegex(ValueError, '复权基准'):
+            self.build(obj)
+
+    def test_mismatched_volume_is_not_patched(self):
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][6] = '4148660'
+        with self.assertRaisesRegex(ValueError, '成交量'):
+            self.build(obj)
+
+    def test_quote_must_be_after_close(self):
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][30] = '20261026145959'
+        with self.assertRaisesRegex(ValueError, '尚未收盘'):
+            self.build(obj)
+
+    def test_quote_must_be_same_symbol(self):
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][2] = '600000'
+        with self.assertRaisesRegex(ValueError, '标的不匹配'):
+            self.build(obj)
+
+    def test_difference_must_be_explained_by_rounding(self):
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][33] = '1.230'
+        with self.assertRaisesRegex(ValueError, '舍入解释'):
+            self.build(obj)
+
+    def test_no_patch_from_another_day(self):
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][30] = '20261027161439'
+        data = self.build(obj)
+        self.assertIsNone(data['meta']['latestCandleCorrection'])
         self.assertEqual(data['rows'][-1]['close'], '1.21')
+
+    def test_fewer_digits_alone_are_not_an_error(self):
+        obj = copy.deepcopy(self.obj)
+        quote = obj['data']['sh512890']['qt']['sh512890']
+        for index, value in [(5,'1.200'),(3,'1.210'),(33,'1.220'),(34,'1.190')]:
+            quote[index] = value
+        data = self.build(obj)
+        self.assertEqual(data['rows'][-1]['close'], '1.21')
+        self.assertIsNone(data['meta']['latestCandleCorrection'])
+
+    def test_later_fetch_cannot_overwrite_verified_precision_with_rounded_history(self):
+        previous = self.build(fetched=True)
+        obj = copy.deepcopy(self.obj)
+        obj['data']['sh512890']['qt']['sh512890'][30] = '20261027161439'
+        with self.assertRaisesRegex(ValueError, '已知舍入价格'):
+            self.build(obj, previous=previous)
 
 
 if __name__ == '__main__':

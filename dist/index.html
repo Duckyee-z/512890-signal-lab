@@ -63,11 +63,11 @@
    <div class="section-heading"><div><h2>数据有出处，计算有边界。</h2><p>收盘后定时更新，抓取失败时保留上次行情，并明确显示日期和状态。</p></div><a class="button outline" id="raw-response" href="./source-market.json" download>↓ 原始响应 JSON</a></div>
    <section class="card prose" id="data-summary"></section>
    <section class="card prose"><h2>来源精度说明</h2><div id="quarantine"></div></section>
-   <section class="card prose"><h2>验证与复现</h2><ul><li>优先请求腾讯证券明确前复权的 qfqday；失败时尝试东方财富明确前复权的 fqt=1。每次整段历史采用单一来源及同一复权口径。</li><li>检查响应身份、日期排序与去重、至少45根日线、OHLC完整性及已知年份的交易日连续性；不纳入未收盘或未来日期日线。</li><li>小数位较少或与普通报价不同，仅作来源提示，按来源原值计算。少于3位小数不是排除K线的理由。</li><li>抓取或校验失败保留上次有效数据，页面显示失败状态和最近成功时间，不将旧行情标为新行情。</li><li>以全量历史重建 MA20 与 A/B 事件。前复权序列会随分红等事件修订，不混接不同复权基准的历史片段。</li></ul><p id="calendar-links"></p><p class="muted">服务端每个工作日北京时间 16:37、18:37、21:37 自动检查、重算并发布，GitHub Actions 可能延迟。页面打开时每5分钟检查一次已发布的数据，也可点击「刷新数据」。休市不推进窗口。此功能不发送买点通知。</p></section>
+   <section class="card prose"><h2>验证与复现</h2><ul><li>优先请求腾讯证券明确前复权的 qfqday；失败时尝试东方财富明确前复权的 fqt=1。每次整段历史采用单一来源及同一复权口径。</li><li>检查响应身份、日期排序与去重、至少45根日线、OHLC完整性及已知年份的交易日连续性；不纳入未收盘或未来日期日线。</li><li>小数位数本身不作为拒绝条件。最新日线若被舍入，先核对同源收盘行情的标的、日期、昨收基准、成交量与全部OHLC舍入关系，通过后校准为完整精度并记录；无法对齐则切换其他完整前复权来源。</li><li>抓取或校验失败保留上次有效数据，页面显示失败状态和最近成功时间，不将旧行情标为新行情。</li><li>以全量历史重建 MA20 与 A/B 事件。前复权序列会随分红等事件修订，不混接不同复权基准的历史片段。</li></ul><p id="calendar-links"></p><p class="muted">服务端每个工作日北京时间 16:37、18:37、21:37 自动检查、重算并发布，GitHub Actions 可能延迟。页面打开时每5分钟检查一次已发布的数据，也可点击「刷新数据」。休市不推进窗口。此功能不发送买点通知。</p></section>
   </section>
   <footer><span>512890 · THE SIGNAL LAB</span><span>历史研究工具 · 收盘确认 · 次日执行假设</span><span>SIGNAL RESEARCH <span class="dot green"></span></span></footer>
  </div>
 </main>
 <div class="toast" id="toast" role="status" hidden></div>
-<script type="module" src="./app.js?v=2"></script>
+<script type="module" src="./app.js?v=3"></script>
 </body></html>

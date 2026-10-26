@@ -7,7 +7,7 @@ import pathlib
 import re
 import sys
 import urllib.request
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -43,6 +43,54 @@ def decode_response(raw, source):
     if source == EASTMONEY and obj.get('rc') == 0 and data.get('code') == '512890' and isinstance(data.get('klines'), list):
         return [r.split(',') for r in data['klines']], '东方财富', None, obj
     raise ValueError('不支持的来源或复权响应')
+
+
+def reconcile_latest_candle(rows, quote):
+    """Recover a rounded latest qfq candle only with a verified same-source close.
+
+    Latest-day qfq is anchored to current prices. Require the previous qfq close
+    to equal the quote's previous-close reference, matching volume and date,
+    an after-close timestamp, and rounding-compatible OHLC for every field.
+    Never apply the latest quote to an older candle or adjust history by guess.
+    """
+    if not quote or len(quote) <= 34 or len(rows) < 2:
+        return None
+    latest = rows[-1]
+    if quote[30][:8] != latest['date'].replace('-', ''):
+        return None
+    if str(quote[2]) != '512890':
+        raise ValueError('同源收盘报价标的不匹配')
+    quoted = dict(zip(('open', 'close', 'high', 'low'), (str(quote[i]) for i in (5, 3, 33, 34))))
+    if any(not re.fullmatch(r'\d+(?:\.\d{1,6})?', value) for value in quoted.values()):
+        raise ValueError('同源收盘报价价格格式无效')
+    if all(Decimal(latest[k]) == Decimal(quoted[k]) for k in quoted):
+        return None
+    stamp = dt.datetime.strptime(quote[30], '%Y%m%d%H%M%S')
+    if stamp.time() < dt.time(15, 0):
+        raise ValueError('最新日线与报价不一致，报价尚未收盘，尝试其他完整前复权来源')
+    if Decimal(rows[-2]['close']) != Decimal(str(quote[4])):
+        raise ValueError('昨收与前一日复权收盘不一致，无法确认同一复权基准')
+    if Decimal(latest['volume']) != Decimal(str(quote[6])):
+        raise ValueError('最新日线与收盘报价成交量不一致，无法校准')
+    o, c, h, l = (Decimal(quoted[k]) for k in ('open', 'close', 'high', 'low'))
+    if not 0 < l <= min(o, c) <= max(o, c) <= h:
+        raise ValueError('完整精度收盘报价OHLC无效')
+    for key, value in quoted.items():
+        decimals = len(latest[key].partition('.')[2])
+        quantum = Decimal(1).scaleb(-decimals)
+        if Decimal(value).quantize(quantum, rounding=ROUND_HALF_UP) != Decimal(latest[key]):
+            raise ValueError('日线与同源报价差异不能由小数位舍入解释，尝试其他前复权来源')
+    correction = {
+        'date': latest['date'], 'source': '腾讯证券同响应 qt 已收盘OHLC',
+        'quoteTime': quote[30],
+        'originalOHLC': {k: latest[k] for k in quoted}, 'usedOHLC': quoted,
+        'previousAdjustedClose': rows[-2]['close'], 'quotedPreviousClose': str(quote[4]),
+        'matchedVolume': latest['volume'],
+        'checks': ['同标的、同交易日', '报价时间在收盘后', '昨收与前一日前复权收盘一致',
+                   '成交量一致', '全部OHLC差异可由舍入解释'],
+    }
+    latest.update(quoted)
+    return correction
 
 
 def prepare(raw, source, now, calendar, previous=None, fetched=False):
@@ -87,6 +135,20 @@ def prepare(raw, source, now, calendar, previous=None, fetched=False):
         raise ValueError('数据窗口有缺失交易日')
     if previous and rows[-1]['date'] < previous['meta']['latestUsableDate']:
         raise ValueError('行情日期倒退，保留上次有效数据')
+    original_latest_ohlc = {k: rows[-1][k] for k in ('open', 'close', 'high', 'low')}
+    correction = reconcile_latest_candle(rows, quote) if provider == '腾讯证券' else None
+    if previous:
+        prior = {row['date']: row for row in previous['rows']}
+        for row in rows:
+            if row['date'] not in prior:
+                continue
+            for key in ('open', 'close', 'high', 'low'):
+                old_value, new_value = prior[row['date']][key], row[key]
+                old_digits, new_digits = len(old_value.partition('.')[2]), len(new_value.partition('.')[2])
+                if new_digits < old_digits and Decimal(old_value) != Decimal(new_value):
+                    quantum = Decimal(1).scaleb(-new_digits)
+                    if Decimal(old_value).quantize(quantum, rounding=ROUND_HALF_UP) == Decimal(new_value):
+                        raise ValueError('来源退回已知舍入价格，尝试其他完整前复权来源，不覆盖完整精度历史')
     for row in rows:
         fields = [k for k in ('open', 'close', 'high', 'low') if len(row[k].partition('.')[2]) < 3]
         if fields:
@@ -102,7 +164,8 @@ def prepare(raw, source, now, calendar, previous=None, fetched=False):
         'firstDate': rows[0]['date'], 'rowCount': len(rows),
         'rawSha256': hashlib.sha256(raw).hexdigest(), 'rawFile': 'source-market.json',
         'quarantined': [], 'precisionNotes': precision,
-        'precisionPolicy': '保留来源原值参与计算；小数位较少仅作提示，不拒绝日K，也不使用行情报价替换。',
+        'precisionPolicy': '小数位数本身不作为拒绝条件。最新日线若与完整精度同源收盘报价不同，仅在标的、日期、收盘时间、昨收基准、成交量及舍入关系全部通过后校准整组OHLC；记录原值与采用值。不能校准则换完整前复权来源。',
+        'latestCandleCorrection': correction,
         'calendarVerified': all(dt.date.fromisoformat(r['date']).year in calendar['supportedYears'] for r in rows),
         'calendarYears': calendar['supportedYears'], 'calendarSources': old.get('calendarSources', []),
         'rebuiltAt': stamp, 'lastAttemptAt': stamp if fetched else old.get('lastAttemptAt'),
@@ -112,7 +175,7 @@ def prepare(raw, source, now, calendar, previous=None, fetched=False):
     }
     if quote and len(quote) > 34 and quote[30][:8] == rows[-1]['date'].replace('-', ''):
         meta['quoteComparison'] = {'date': rows[-1]['date'], 'quoteTime': quote[30],
-            'qfqOHLC': {k: rows[-1][k] for k in ('open', 'close', 'high', 'low')},
+            'qfqOHLC': original_latest_ohlc,
             'quoteOHLC': dict(zip(('open', 'close', 'high', 'low'), (quote[i] for i in (5, 3, 33, 34))))}
     return {'meta': meta, 'rows': rows}
 
