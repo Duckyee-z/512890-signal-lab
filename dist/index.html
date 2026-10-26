@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f6f7f9"><meta name="robots" content="noindex,nofollow">
+<title>512890 · 买点研究室</title><meta name="description" content="华泰柏瑞红利低波ETF买点回测工作台。前复权日线、MA20与A/B历史信号核验。">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<aside class="sidebar">
+ <a class="brand" href="#overview"><span class="brand-icon"><svg viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M5 21V14M11 21V7M17 21V11M23 21V4" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></span><span>买点研究室<small>THE SIGNAL LAB</small></span></a>
+ <div class="workspace-label">个人研究空间</div>
+ <nav aria-label="主导航">
+  <a href="#overview" data-view="overview" class="nav-item active"><span>◈</span>信号工作台<i>01</i></a>
+  <a href="#backtest" data-view="backtest" class="nav-item"><span>⌁</span>资金回测<i>02</i></a>
+  <a href="#rules" data-view="rules" class="nav-item"><span>☷</span>规则说明<i>03</i></a>
+  <a href="#data" data-view="data" class="nav-item"><span>▤</span>数据审计<i>04</i></a>
+ </nav>
+ <div class="sidebar-note"><div class="tiny-dot"></div> 纪律先于判断<p>固定规则 · 收盘确认<br>历史可查 · 过程可复核</p><div class="mini-line"><svg viewBox="0 0 150 45" fill="none"><path d="M0 34L15 29L27 33L42 19L54 24L68 12L82 21L98 15L111 18L126 7L150 3" stroke="#b7c6b9" stroke-width="1.5"/></svg></div></div>
+ <div class="sidebar-bottom"><span class="lock-icon">▣</span><div>静态研究站<small>访问范围由托管设置控制</small></div><span class="avatar">Z</span></div>
+</aside>
+<main>
+ <header class="topbar"><div class="breadcrumb">研究空间 <span>/</span> <b id="page-label">信号工作台</b></div><div class="top-tags"><span class="live-dot"></span>历史快照 <span class="separator">|</span><span>SH · 512890</span></div></header>
+ <div class="content">
+  <div class="heading"><div><div class="eyebrow">HUATAI-PINEBRIDGE · DIVIDEND LOW VOLATILITY</div><h1>512890 <span>买点回测</span><sup>MVP</sup></h1><p>从突破到回踩，复盘每一次 A / B 信号。</p></div><button id="export" class="button outline"><span>↓</span> 导出信号 CSV</button></div>
+  <div class="snapshot-bar"><div><span class="dot green"></span>最新可用 K 线 <b id="latest-date">加载中</b><span class="pill">前复权</span><span class="source-label">腾讯证券 · 日线</span></div><a href="#data">查看数据审计 <span>↗</span></a></div>
+  <div class="notice" id="notice" role="status"></div>
+  <section class="filterbar" aria-label="时间范围">
+   <div class="range-buttons" id="ranges"><button data-months="3" class="selected">近 3 月</button><button data-months="6">近 6 月</button><button data-months="12">近 1 年</button><button data-months="ytd">今年</button><button data-months="all">全部</button></div>
+   <div class="date-controls"><label class="sr-only" for="start">起始日期</label><input type="date" id="start"><span>—</span><label class="sr-only" for="end">截止日期</label><input type="date" id="end"><button class="button small" id="apply">应用</button></div>
+  </section>
+  <div id="range-error" class="error" role="alert"></div>
+  <section class="view" id="overview">
+   <div class="metrics" id="metrics"></div>
+   <div class="workspace-grid">
+    <section class="card chart-card"><div class="card-header"><div><h2>价格与买点</h2><span id="chart-range" class="muted"></span></div><span class="unit-label">CNY / 前复权日 K</span></div>
+     <div class="chart-controls"><div class="legend"><span><i class="candle-key"></i>日 K</span><label><input type="checkbox" id="show-ma" checked><i class="line-key"></i>MA20</label><label><input type="checkbox" id="show-a" checked><i class="signal-key a">A</i>回踩</label><label><input type="checkbox" id="show-b" checked><i class="signal-key b">B</i>冲高回踩</label></div><span class="hover-hint">悬停查看 · 点击锁定</span></div>
+     <div id="chart-wrap"><canvas id="price-chart" tabindex="0" aria-label="前复权日K线与MA20及A/B买点；左右方向键逐日查看。精确数据可在下方查看或导出。"></canvas><div class="chart-tooltip" id="chart-tooltip" hidden></div></div>
+     <div class="chart-footer"><span id="chart-day">使用鼠标或左右方向键查看单日行情</span><button id="reset-chart" class="text-button">重置选中</button></div>
+    </section>
+    <aside class="card strategy-card"><div class="card-header"><h2>策略状态</h2><span class="muted" id="state-date"></span></div><p class="state-note">截至所选区间最后一根 K 线</p><div id="strategy-state"></div><div class="rule-short"><span>共同约束</span><p>突破后 10 个交易日内有效；收盘跌破 MA20 即失效。每轮 A / B 各触发一次。</p><a href="#rules">完整判定规则 ↗</a></div></aside>
+   </div>
+   <section class="card signal-card"><div class="card-header"><div><h2>历史触发记录 <span class="count" id="signal-count">0</span></h2><p class="muted">点击日期定位 K 线。区间筛选不重置历史突破事件。</p></div><div class="segmented" id="signal-filter"><button data-strategy="all" class="selected">全部</button><button data-strategy="A">策略 A</button><button data-strategy="B">策略 B</button></div></div>
+    <div class="table-scroll"><table><thead><tr><th>触发日期 ↓</th><th>策略</th><th>前复权收盘</th><th>MA20</th><th>突破日期</th><th>B 冲高日期</th><th>余下交易日</th><th>后 20 日收益 <span title="信号后下一交易日开盘买入，至第20个交易日收盘；未扣费。截至所选末日数据不够时留空。">ⓘ</span></th></tr></thead><tbody id="signal-table"></tbody></table></div>
+    <div class="table-bottom"><span id="sample-note">后20日收益截至所选末日核验；未扣费，非策略收益。</span><div><button id="prev-page" class="page-button" aria-label="上一页">←</button><span id="pagination"></span><button id="next-page" class="page-button" aria-label="下一页">→</button></div></div>
+   </section>
+  </section>
+  <section class="view" id="backtest" hidden>
+   <div class="section-heading"><div><h2>规则的表现，交给历史检验。</h2><p>独立模拟资金账户；买入信号不受模拟持仓屏蔽。</p></div><span class="pill">日线收盘确认模型</span></div>
+   <section class="card simulation-settings"><label>信号来源<select id="sim-strategy"><option value="A">策略 A</option><option value="B">策略 B</option><option value="AB">A + B（同日各一笔）</option></select></label><label>初始资金（元）<input id="capital" type="number" value="100000" min="1000" max="100000000" step="1000"></label><label>单边费率（万分之）<input id="fee" type="number" value="3" min="0" max="100" step="0.1"></label><label>单边滑点（万分之）<input id="slippage" type="number" value="0" min="0" max="100" step="0.1"></label><button class="button primary" id="run-sim">运行回测 ↗</button></section>
+   <div id="sim-error" class="error" role="alert"></div><div id="sim-metrics" class="metrics"></div>
+   <section class="card"><div class="card-header"><div><h2>账户净值</h2><p class="muted">橙色：策略账户　灰色：区间首日开盘买入持有（同费率与滑点）</p></div><span class="pill">初始净值 1.000</span></div><canvas id="equity-chart" aria-label="模拟账户净值与买入持有基准曲线"></canvas></section>
+   <div class="model-note"><b>成交假设</b><p>每笔使用初始资金的 50%（含买入费用），最多同时 2 笔。信号日收盘确认，下一有效交易日开盘模拟买入；持仓收盘价较入场价上涨至少 5% 后，下一有效交易日开盘模拟卖出。最后一天待执行订单不成交，持仓按收盘估值。允许小数份额，忽略最低佣金、手数、流动性与现金分红到账；前复权收益近似不等于实盘现金流。无止损，未触发止盈可长期持有。区间起始为空仓，不继承之前仓位。</p></div>
+   <section class="card"><div class="card-header"><h2>模拟交易明细</h2><span class="muted">独立模拟 · 非实际交易</span></div><div class="table-scroll"><table><thead><tr><th>策略 / 信号日</th><th>模拟买入日</th><th>买入价</th><th>模拟卖出日</th><th>卖出价</th><th>收益 / 浮动</th><th>状态</th></tr></thead><tbody id="trades-table"></tbody></table></div></section>
+  </section>
+  <section class="view" id="rules" hidden>
+   <div class="section-heading"><div><h2>一套规则，每次一致。</h2><p>沿用现有 A / B 日线买点监控规则；价格与 MA20 使用同一前复权序列。</p></div><span class="pill">规则版本 · 2026.10.22</span></div>
+   <div class="rule-grid"><section class="card rule-detail"><span class="strategy-mark a">A</span><h2>突破后的首次回踩</h2><p>从突破后第 1 至第 10 个真实交易日逐日检查，首次满足：</p><div class="formula">MA20 ≤ 收盘价 ≤ MA20 × 1.005</div><p>等待期间未收盘跌破 MA20。突破日不能同时作为回踩日。</p></section><section class="card rule-detail"><span class="strategy-mark b">B</span><h2>冲高确认，再缩价回踩</h2><p>突破后窗口内，先出现某日收盘价 ≥ MA20 × 1.015；严格晚于该冲高日，首次同时满足：</p><div class="formula">MA20 ≤ 收盘价 ≤ MA20 × 1.005<br>当日收盘价 &lt; 上一交易日收盘价</div><p>冲高必须发生在突破后的有效窗口内；突破日不算冲高确认日。</p></section></div>
+   <section class="card prose"><h2>共同判定流程</h2><ol><li><b>均线预热：</b>MA20 = 包含当天在内最近 20 个真实交易日收盘价的简单均值。前后两日均有 MA20 才判断突破。</li><li><b>严格上穿：</b>前一日收盘价 &lt; 前一日 MA20，且当日收盘价 &gt; 当日 MA20。前一日相等不视为突破。</li><li><b>有效窗口：</b>突破后第 1–10 个交易日，包含第 10 日。自然日、周末与休市不推进窗口。</li><li><b>失效与重置：</b>等待期间任一日收盘价 &lt; MA20 立即失效，相等不失效；第 10 日可先触发，再将未触发策略置为到期。新突破建立新事件。</li><li><b>分别去重：</b>每次突破 A 和 B 各最多触发一次；A 触发不终止 B，反之亦然。</li><li><b>完整历史计算：</b>先以全量数据重建均线与事件，再筛选展示日期。切换区间不会制造新的突破。</li></ol><div class="inline-note">内部使用定点整数计算阈值，不提前四舍五入。图表与表格展示的小数位数不参与信号判定。</div></section>
+   <section class="card prose"><h2>如何核对一个信号</h2><p>在「历史触发记录」点击日期，检查当天收盘价与 MA20 的距离；再查看突破日期、B 的冲高日期和剩余交易日。图表支持悬停、点击锁定、左右方向键查看前后日；「导出信号 CSV」导出当前区间和当前策略筛选的结果。</p><p>买点在收盘后确认，只能提示下一交易日开盘可考虑执行。后 20 日收益使用下一交易日开盘至第 20 个交易日收盘，不足 20 日标记「样本未完结」。</p></section>
+  </section>
+  <section class="view" id="data" hidden>
+   <div class="section-heading"><div><h2>数据有出处，计算有边界。</h2><p>固定快照 MVP。不会将旧 K 线伪装成当日行情，也不会用其他复权口径替代。</p></div><a class="button outline" href="./source-tencent.json" download>↓ 原始响应 JSON</a></div>
+   <section class="card prose" id="data-summary"></section>
+   <section class="card prose"><h2>隔离记录</h2><div id="quarantine"></div></section>
+   <section class="card prose"><h2>验证与复现</h2><ul><li>响应 code = 0，明确使用 data.sh512890.qfqday；字段顺序为日期、开盘、收盘、最高、最低、成交量，已正确映射。</li><li>有效日线已核验日期唯一、升序、OHLC 完整且价格区间一致。与上交所 2024–2026 休市安排比对，640 根有效日线无缺失交易日。</li><li>最近 19 根有效 K 线（2026-09-21 至 2026-10-23）的 OHLC 与英为财情逐项一致。该页面未明确复权口径，仅用于交叉核验。</li><li>以原始数值计算，MA20 预热后重建全量突破事件。计算只读取当前及此前 K 线；未来收益仅用于事后观察。</li><li>前复权价格采用本次提供方快照，未来分红可能使历史序列修订；不是逐日归档的时点复权数据库。</li></ul><p id="calendar-links"></p><p><a href="https://cn.investing.com/etfs/huatai-pinebridge-csi-div-low-vol-historical-data" target="_blank" rel="noopener">交叉核验：英为财情历史行情 ↗</a></p><p class="muted">本版不自动刷新行情或发送通知。重新访问仍载入同一快照；后续更新需重新拉取、核验并部署。原有买点提醒任务独立运行。</p></section>
+  </section>
+  <footer><span>512890 · THE SIGNAL LAB</span><span>历史研究工具 · 收盘确认 · 次日执行假设</span><span>SIGNAL RESEARCH <span class="dot green"></span></span></footer>
+ </div>
+</main>
+<div class="toast" id="toast" role="status" hidden></div>
+<script type="module" src="./app.js"></script>
+</body></html>
