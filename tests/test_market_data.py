@@ -3,10 +3,13 @@ import datetime as dt
 import json
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
+import market_data
 from market_data import TENCENT, EASTMONEY, TZ, prepare, closed_cutoff, retain_after_failure
 
 
@@ -81,10 +84,12 @@ class MarketDataTest(unittest.TestCase):
 
     def test_failure_and_regression_keep_previous_data(self):
         old = self.build(fetched=True)
-        failed = retain_after_failure(old, self.now, ['source unavailable'])
+        next_day = self.now + dt.timedelta(days=1)
+        failed = retain_after_failure(old, next_day, ['source unavailable'], self.calendar)
         self.assertEqual(failed['rows'], old['rows'])
         self.assertEqual(failed['meta']['latestUsableDate'], old['meta']['latestUsableDate'])
         self.assertEqual(failed['meta']['lastSuccessfulFetchAt'], old['meta']['lastSuccessfulFetchAt'])
+        self.assertEqual(failed['meta']['expectedLatestDate'], '2026-10-27')
         self.assertEqual(failed['meta']['updateStatus'], 'failed')
         obj = copy.deepcopy(self.obj)
         obj['data']['sh512890']['qfqday'].pop()
@@ -99,6 +104,37 @@ class MarketDataTest(unittest.TestCase):
         self.assertEqual(data['meta']['provider'], '东方财富')
         self.assertIn('fqt=1', data['meta']['adjustment'])
         self.assertEqual(data['rows'][-1]['close'], '1.213')
+
+    def test_fetch_tries_fallback_when_primary_is_stale(self):
+        old = self.build(fetched=True)
+        next_day = self.now + dt.timedelta(days=1)
+        rows = copy.deepcopy(self.obj['data']['sh512890']['qfqday'])
+        rows[-1][1:5] = ['1.195', '1.213', '1.215', '1.192']
+        rows.append(['2026-10-27', '1.213', '1.215', '1.220', '1.210', '100'])
+        fallback = json.dumps({'rc': 0, 'data': {'code': '512890',
+            'klines': [','.join(row[:6]) for row in rows]}}).encode()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            dist = root / 'dist'
+            dist.mkdir()
+            (dist / 'calendar.json').write_text(json.dumps(self.calendar))
+            (dist / 'data.json').write_text(json.dumps(old))
+            with patch.object(market_data, 'ROOT', root), \
+                 patch.object(market_data.dt, 'datetime', wraps=dt.datetime) as clock, \
+                 patch.object(market_data.urllib.request, 'urlopen') as urlopen, \
+                 patch('builtins.print'):
+                clock.now.return_value = next_day
+                urlopen.return_value.__enter__.return_value.read.side_effect = [self.raw, fallback]
+                self.assertEqual(market_data.main(['--fetch']), 0)
+
+            self.assertEqual([call.args[0].full_url for call in urlopen.call_args_list],
+                             [TENCENT, EASTMONEY])
+            self.assertEqual((dist / 'source-market.json').read_bytes(), fallback)
+            status = json.loads((dist / 'update-status.json').read_text())
+            self.assertEqual(status['latestUsableDate'], '2026-10-27')
+            self.assertEqual(status['provider'], '东方财富')
+            self.assertEqual(status['updateStatus'], 'success')
 
 
     def test_reference_close_must_match_adjustment_basis(self):

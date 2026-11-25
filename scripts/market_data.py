@@ -135,6 +135,8 @@ def prepare(raw, source, now, calendar, previous=None, fetched=False):
         raise ValueError('数据窗口有缺失交易日')
     if previous and rows[-1]['date'] < previous['meta']['latestUsableDate']:
         raise ValueError('行情日期倒退，保留上次有效数据')
+    if fetched and rows[-1]['date'] < cutoff.isoformat():
+        raise ValueError(f'最新已收盘日线仅到 {rows[-1]["date"]}，应为 {cutoff}')
     original_latest_ohlc = {k: rows[-1][k] for k in ('open', 'close', 'high', 'low')}
     correction = reconcile_latest_candle(rows, quote) if provider == '腾讯证券' else None
     if previous:
@@ -186,10 +188,11 @@ def write_json(path, value):
     temp.replace(path)
 
 
-def retain_after_failure(previous, now, errors):
+def retain_after_failure(previous, now, errors, calendar):
     result = json.loads(json.dumps(previous))
     result['meta'].update(lastAttemptAt=now.astimezone(TZ).isoformat(timespec='seconds'),
-        updateStatus='failed', lastUpdateError='；'.join(errors), autoUpdateSchedule=SCHEDULE)
+        updateStatus='failed', lastUpdateError='；'.join(errors), autoUpdateSchedule=SCHEDULE,
+        expectedLatestDate=closed_cutoff(now, calendar).isoformat())
     return result
 
 
@@ -224,7 +227,7 @@ def main(argv=None):
     if result is None:
         if not previous:
             raise RuntimeError('没有可保留的有效行情：' + '；'.join(errors))
-        result = retain_after_failure(previous, now, errors)
+        result = retain_after_failure(previous, now, errors, calendar)
         print('::warning::行情获取失败，保留上次有效数据。' + '；'.join(errors))
     else:
         temp = ROOT / 'dist/source-market.json.tmp'

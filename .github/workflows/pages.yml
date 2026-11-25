@@ -5,10 +5,13 @@ on:
     branches: [main]
   schedule:
     # UTC -> Asia/Shanghai 16:37, 18:37, 21:37 on weekdays.
-    - cron: '37 8,10,13 * * 1-5'
+    - cron: '37 8 * * 1-5'
+    - cron: '37 10 * * 1-5'
+    - cron: '37 13 * * 1-5'
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
   pages: write
   id-token: write
@@ -19,13 +22,18 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      PAGES_ARTIFACT: github-pages-${{ github.run_attempt }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          ref: main
       - name: Refresh closed adjusted daily prices
         run: python3 scripts/update-data.py --fetch
       - name: Verify market data ingestion
@@ -46,9 +54,30 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload static website
+        id: upload
         uses: actions/upload-pages-artifact@v3
         with:
+          name: ${{ env.PAGES_ARTIFACT }}
           path: dist
+      - name: Wait for the Pages artifact to be listed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
+        run: |
+          if [[ -z "$ARTIFACT_ID" ]]; then
+            echo '::error::Pages upload did not return an artifact ID.'
+            exit 1
+          fi
+          for delay in 0 2 4 8 16; do
+            sleep "$delay"
+            if ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$PAGES_ARTIFACT" --jq '.artifacts[] | select(.expired == false) | .id') && grep -Fxq "$ARTIFACT_ID" <<< "$ids"; then
+              exit 0
+            fi
+          done
+          echo '::error::Uploaded Pages artifact did not become visible.'
+          exit 1
       - name: Deploy website
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ env.PAGES_ARTIFACT }}

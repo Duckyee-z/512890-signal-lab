@@ -145,7 +145,7 @@ function renderNotice(){
  const m=data.meta,last=m.lastSuccessfulFetchAt?.replace('T',' ').replace('+08:00','')||'等待首次在线抓取';
  let message=`自动更新：工作日 16:37 / 18:37 / 21:37（北京时间） · 上次成功抓取 ${last}。`;
  if(m.updateStatus==='failed')message=`最近抓取失败，保留截至 ${m.latestUsableDate} 的有效行情。`+message;
- const expected=latestExpected();if(m.latestUsableDate<expected)message+=` 当前最新应收盘日期 ${expected}，来源尚未更新。`;
+ const expected=latestExpected();if(m.latestUsableDate<expected)message+=` 页面行情截至 ${m.latestUsableDate}，正在等待发布 ${expected} 的收盘日线。`;
  if(m.latestCandleCorrection)message+=` ${m.latestCandleCorrection.date} 已按校验通过的同源完整精度收盘OHLC校准。`;
  const recent=(m.precisionNotes||[]).filter(n=>n.date===m.latestUsableDate);if(recent.length)message+=` ${m.latestUsableDate} 来源小数位较少，已按原值纳入计算。`;
  $('#notice').textContent=message;$('#latest-date').textContent=m.latestUsableDate;$('.source-label').textContent=m.provider+' · 日线';
@@ -162,7 +162,11 @@ async function refreshData(manual){
   if(changed){
    if(preset)setPreset(preset);else{$('#start').value=oldStart<rows[20].date?rows[20].date:oldStart;$('#end').value=oldEnd===wasLatest?rows.at(-1).date:(oldEnd>rows.at(-1).date?rows.at(-1).date:oldEnd);applyRange();}
   }
-  if(manual)notify(changed?'已载入最新发布行情':'已是最新发布行情 · '+data.meta.latestUsableDate);
+  if(manual){
+   const expected=latestExpected();
+   if(data.meta.latestUsableDate<expected)notify(`行情截至 ${data.meta.latestUsableDate}，等待发布 ${expected} 的收盘日线`);
+   else notify(changed?'已载入最新发布行情':'已是最新发布行情 · '+data.meta.latestUsableDate);
+  }
  }catch(error){if(manual)notify('同步失败，保留当前已载入行情');$('#notice').textContent='页面同步失败，保留截至 '+data.meta.latestUsableDate+' 的已载入行情。';}
  finally{refreshing=false;button.disabled=false;}
 }
